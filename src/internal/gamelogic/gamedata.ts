@@ -1,4 +1,4 @@
-const locations = [
+export const locations = [
   "americas",
   "europe",
   "africa",
@@ -14,7 +14,7 @@ export function isValidLocation(loc?: string): loc is Location {
   return typeof loc === "string" && l.has(loc);
 }
 
-const ranks = ["infantry", "cavalry", "artillery"] as const;
+export const ranks = ["infantry", "cavalry", "artillery"] as const;
 
 export type UnitRank = (typeof ranks)[number];
 
