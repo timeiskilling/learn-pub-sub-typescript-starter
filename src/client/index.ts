@@ -6,13 +6,18 @@ import {
   printClientHelp,
   printQuit,
 } from "../internal/gamelogic/gamelogic.js";
-import { ExchangePerilDirect, PauseKey } from "../internal/routing/routing.js";
+import {
+  ExchangePerilDirect,
+  ExchangePerilTopic,
+  PauseKey,
+} from "../internal/routing/routing.js";
 import { GameState } from "../internal/gamelogic/gamestate.js";
 import { commandSpawn } from "../internal/gamelogic/spawn.js";
-import { commandMove } from "../internal/gamelogic/move.js";
+import { commandMove, handleMove } from "../internal/gamelogic/move.js";
 import { declareAndBind } from "../internal/pubsub/bind.js";
 import { subscribeJSON } from "../internal/pubsub/subscribe.js";
-import { handlerPause } from "./handlers.js";
+import { handlerMove, handlerOfWar, handlerPause } from "./handlers.js";
+import { publishJSON } from "../internal/pubsub/publish.js";
 
 async function main() {
   const rabbitConnString = "amqp://guest:guest@localhost:5672/";
@@ -42,8 +47,16 @@ async function main() {
     "transient",
   );
 
-  const gs = new GameState(username);
+  await declareAndBind(
+    conn,
+    ExchangePerilTopic,
+    `army_moves.${username}`,
+    `army_moves.*`,
+    "transient",
+  );
 
+  const gs = new GameState(username);
+  const publishChannel = await conn.createConfirmChannel();
   subscribeJSON(
     conn,
     ExchangePerilDirect,
@@ -51,6 +64,24 @@ async function main() {
     PauseKey,
     "transient",
     handlerPause(gs),
+  );
+
+  subscribeJSON(
+    conn,
+    ExchangePerilTopic,
+    `army_moves.${username}`,
+    `army_moves.*`,
+    "transient",
+    handlerMove(gs, publishChannel),
+  );
+
+  subscribeJSON(
+    conn,
+    ExchangePerilTopic,
+    `war`,
+    `war.*`,
+    "durable",
+    handlerOfWar(gs),
   );
 
   while (true) {
@@ -61,7 +92,13 @@ async function main() {
     const command = words[0];
     if (command === "move") {
       try {
-        commandMove(gs, words);
+        const move = commandMove(gs, words);
+        publishJSON(
+          publishChannel,
+          ExchangePerilTopic,
+          `army_moves.${username}`,
+          move,
+        );
       } catch (err) {
         console.log((err as Error).message);
       }
